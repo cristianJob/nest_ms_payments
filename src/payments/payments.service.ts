@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 
 @Injectable()
 export class PaymentsService {
-    private readonly stripe = new Stripe(envs.stripeEndpointSecret)
+    private readonly stripe = new Stripe(envs.stripeSecret)
 
     async createPaymentSession(paymentSessionDto: PaymentSessionDto) {
         const { currency, items, orderId } = paymentSessionDto;
@@ -27,8 +27,8 @@ export class PaymentsService {
             payment_method_types: ['card'],
             line_items: lineItems,
             mode: 'payment',
-            success_url: 'http://localhost:3003/api/payments/success',
-            cancel_url: 'http://localhost:3003/api/payments/cancel',
+            success_url: envs.stripeSuccessUrl,
+            cancel_url: envs.stripeCancelUrl,
         })
     }
 
@@ -41,7 +41,7 @@ export class PaymentsService {
         }
 
         let event: Stripe.Event;
-        const endpointSecret = 'whsec_CRMg0PuJcEzCF6W2SH9YtVmoqNIXLHf5';
+        const endpointSecret = envs.stripeEndpointSecret;
 
         try {
             event = this.stripe.webhooks.constructEvent(req['rawBody'], sig, endpointSecret);
