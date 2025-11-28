@@ -1,0 +1,64 @@
+import { Injectable } from '@nestjs/common';
+import { envs } from 'src/config';
+import Stripe from 'stripe';
+import { PaymentSessionDto } from './dto/payment-session.dto';
+import { Request, Response } from 'express';
+
+@Injectable()
+export class PaymentsService {
+    private readonly stripe = new Stripe(envs.stripeEndpointSecret)
+
+    async createPaymentSession(paymentSessionDto: PaymentSessionDto) {
+        const { currency, items, orderId } = paymentSessionDto;
+        const lineItems = items.map(item => ({
+            price_data: {
+                currency,
+                product_data: {
+                    name: item.name,
+                },
+                unit_amount: Math.round(item.price * 100), // redondea y quita los decimales despues multiplicar por 100
+            },
+            quantity: item.quantity,
+        }));
+        return await this.stripe.checkout.sessions.create({
+            payment_intent_data: {
+                metadata: { orderId }
+            },
+            payment_method_types: ['card'],
+            line_items: lineItems,
+            mode: 'payment',
+            success_url: 'http://localhost:3003/api/payments/success',
+            cancel_url: 'http://localhost:3003/api/payments/cancel',
+        })
+    }
+
+    async stripeWebhook(req: Request, res: Response) {
+        const sig = req.headers['stripe-signature'];
+
+        // Validate that the signature exists
+        if (!sig) {
+            return res.status(400).json({ error: 'Missing stripe-signature header' });
+        }
+
+        let event: Stripe.Event;
+        const endpointSecret = 'whsec_CRMg0PuJcEzCF6W2SH9YtVmoqNIXLHf5';
+
+        try {
+            event = this.stripe.webhooks.constructEvent(req['rawBody'], sig, endpointSecret);
+        } catch (error) {
+            return res.status(400).json({ error: 'Webhook error' });
+        }
+
+        switch (event.type) {
+            case 'charge.succeeded':
+                const { metadata } = event.data.object;
+                console.log({ metadata });
+                break;
+            default:
+                console.log(`Unhandled event type ${event.type}`);
+        }
+
+        return res.status(200).json({ sig })
+
+    }
+}
