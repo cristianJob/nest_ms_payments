@@ -1,12 +1,16 @@
-import { Injectable } from '@nestjs/common';
-import { envs } from 'src/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { envs, NATS_SERVICE } from 'src/config';
 import Stripe from 'stripe';
 import { PaymentSessionDto } from './dto/payment-session.dto';
 import { Request, Response } from 'express';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class PaymentsService {
     private readonly stripe = new Stripe(envs.stripeSecret)
+    private readonly logger = new Logger("PaymentService")
+
+    constructor(@Inject(NATS_SERVICE) private readonly client: ClientProxy) { }
 
     async createPaymentSession(paymentSessionDto: PaymentSessionDto) {
         const { currency, items, orderId } = paymentSessionDto;
@@ -20,7 +24,7 @@ export class PaymentsService {
             },
             quantity: item.quantity,
         }));
-        return await this.stripe.checkout.sessions.create({
+        const session = await this.stripe.checkout.sessions.create({
             payment_intent_data: {
                 metadata: { orderId }
             },
@@ -30,6 +34,12 @@ export class PaymentsService {
             success_url: envs.stripeSuccessUrl,
             cancel_url: envs.stripeCancelUrl,
         })
+
+        return {
+            cancelUrl: session.cancel_url,
+            successUrl: session.success_url,
+            url: session.url
+        }
     }
 
     async stripeWebhook(req: Request, res: Response) {
@@ -51,8 +61,14 @@ export class PaymentsService {
 
         switch (event.type) {
             case 'charge.succeeded':
-                const { metadata } = event.data.object;
-                console.log({ metadata });
+                const chargeSucceeded = event.data.object;
+                const payload = {
+                    stripePayloadId: chargeSucceeded.id,
+                    orderId: chargeSucceeded.metadata.orderId,
+                    receiptUrl: chargeSucceeded.receipt_url
+                }
+                this.logger.log({ payload })
+                this.client.emit('payment.succeeded', payload) // se ejecuta sin esperar una respuesta
                 break;
             default:
                 console.log(`Unhandled event type ${event.type}`);
