@@ -8,7 +8,7 @@ import { MessagePattern, Payload } from '@nestjs/microservices';
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) { }
 
-  //@Post('create-payment-session')
+  //@Post('create-payment-session').    esto se hace desde create order se debe ejecutar para que funcione hookdeck listen 3003 stripe-to-localhost
   @MessagePattern('create.payment.session')
   async createPaymentSession(@Payload() paymentSessionDto: PaymentSessionDto) {
     return this.paymentsService.createPaymentSession(paymentSessionDto);
